@@ -3,6 +3,7 @@ import os.path
 import re
 import subprocess
 import shlex
+from importlib import import_module
 from typing import Tuple, Dict
 
 import numpy as np
@@ -97,12 +98,22 @@ def note_name_to_freq_and_multiplier(name: str, time_signature: Tuple[int, int])
     raise Exception
 
 
-def main() -> None:
-    import input.fur_elise_beginner.score as fur_elise
+def read_pyscore_into_mp3(pyscore_name: str) -> str:
+    input_music_data = import_module(pyscore_name)
+    if 'score' not in input_music_data.__dict__:
+        raise ImportError(f'Could not find variable `score` in {input_music_data.__file__}')
+
+    package_name = input_music_data.__package__
+    if package_name.startswith('input.'):
+        package_name = package_name[6:]
+
+    output_dir = pathlib.Path(OUTPUT_PATH, *package_name.split('.'))
+
+    score = input_music_data.score
     waves = []
-    bpm = fur_elise.score.bpm
-    time_signature = fur_elise.score.time_signature
-    for i, channel in enumerate(fur_elise.score.channels):
+    bpm = score.bpm
+    time_signature = score.time_signature
+    for i, channel in enumerate(score.channels):
         waves.append(np.concatenate(np.array(
             [note(n, 0.5, bpm, time_signature)
              for n in channel.channel_score.replace("  ", " ").replace('\n', '').strip().split()]
@@ -113,16 +124,16 @@ def main() -> None:
     for i, wave in enumerate(waves.copy()):
         waves[i] = np.pad(wave, (0, wave_len - len(wave)), 'constant', constant_values=(.0, .0))
 
-    os.makedirs(OUTPUT_PATH, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     # when muxed directly in numpy, the overlap sounds bad
     wave = sum(waves)
-    output_bin_file = pathlib.Path(OUTPUT_PATH, 'output_numpy.bin')
+    output_bin_file = pathlib.Path(output_dir, 'output_numpy.bin')
 
     with open(output_bin_file, 'wb') as output:
         output.write(wave.tobytes())
 
-    output_numpy_mp3 = pathlib.Path(OUTPUT_PATH, 'output_numpy.mp3')
+    output_numpy_mp3 = pathlib.Path(output_dir, 'output_numpy.mp3')
     output_numpy_mp3.unlink(missing_ok=True)
     subprocess.Popen(shlex.split(
         f'ffmpeg -f f32le -ar {SAMPLE_RATE} -i {output_bin_file} {output_numpy_mp3}'
@@ -130,13 +141,13 @@ def main() -> None:
 
     # when muxed in ffmpeg, the overlap sounds perfect
     cmd_ffmpeg_i = []
-    for i, channel in enumerate(fur_elise.score.channels):
-        channel_output_bin_file = pathlib.Path(OUTPUT_PATH, f'{channel.name.replace(" ", "_").lower()}_output.bin')
+    for i, channel in enumerate(score.channels):
+        channel_output_bin_file = pathlib.Path(output_dir, f'{channel.name.replace(" ", "_").lower()}_output.bin')
         cmd_ffmpeg_i.append(f'-f f32le -ar {SAMPLE_RATE} -i {channel_output_bin_file}')
         with open(channel_output_bin_file, 'wb') as output:
             output.write(waves[i].tobytes())
 
-    output_mp3 = pathlib.Path(OUTPUT_PATH, 'output.mp3')
+    output_mp3 = pathlib.Path(output_dir, 'output.mp3')
     output_mp3.unlink(missing_ok=True)
 
     subprocess.Popen(shlex.split(
@@ -145,6 +156,12 @@ def main() -> None:
         f'-filter_complex amix=inputs={len(cmd_ffmpeg_i)}:duration=longest '
         f'{output_mp3}'
     )).wait()
+
+    return output_mp3
+
+
+def main() -> None:
+    output_mp3 = read_pyscore_into_mp3('input.fur_elise_beginner')
 
     # let's play!
     subprocess.Popen(shlex.split(f"ffplay -autoexit -showmode 0 {output_mp3}")).wait()
