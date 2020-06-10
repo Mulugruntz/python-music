@@ -58,18 +58,13 @@ def envelope(freq: np.ndarray, adsr_envelope: np.ndarray=ADSR_ENVELOPE) -> np.nd
     return e
 
 
-def note(hz: float, beats: float) -> np.ndarray:
-    n = envelope(pulse(hz, beats * 60 / BPM))
+def note(name: str, beats: float, bpm: int = BPM, time_signature: Tuple[int, int] = TIME_SIGNATURE) -> np.ndarray:
+    freq, multiplier = note_name_to_freq_and_multiplier(name, time_signature)
+    n = envelope(pulse(freq, multiplier * beats * 60 / bpm))
     return n
 
 
-def note2(name: str, beats: float) -> np.ndarray:
-    freq, multiplier = note_name_to_freq_and_multiplier(name)
-    n = envelope(pulse(freq, multiplier * beats * 60 / BPM))
-    return n
-
-
-def note_name_to_freq_and_multiplier(name: str) -> Tuple[float, float]:
+def note_name_to_freq_and_multiplier(name: str, time_signature: Tuple[int, int]) -> Tuple[float, float]:
     """
     Accepted names are case-insensitive and in the form
         A4, B4, A3, A#4, Bb4
@@ -89,7 +84,7 @@ def note_name_to_freq_and_multiplier(name: str) -> Tuple[float, float]:
     if match := RE_NOTE_NAME.match(name):
         note_props = match.groupdict()
         if note_props['rest'] is not None:
-            return 0.0, float(RESTS_TO_MULTIPLIER[note_props['rest']]) * TIME_SIGNATURE[1]
+            return 0.0, float(RESTS_TO_MULTIPLIER[note_props['rest']]) * time_signature[1]
         rank = (
                 12 * (int(note_props['scale']) - 4)
                 + SEMITONE_DIST_TO_A[note_props['note']]
@@ -103,98 +98,26 @@ def note_name_to_freq_and_multiplier(name: str) -> Tuple[float, float]:
 
 
 def main() -> None:
-    score_left_hand = """
-    E5 D#5
-    E5 D#5 E5 B4 D5 C5
-    A4-2 Rq C4 E4 A4
-    B4-2 Rq E4 G#4 B4
-    C5-2 Rq E4 E5 D#5
-    
-    E5 D#5 E5 B4 D5 C5
-    A4-2 Rq C4 E4 A4
-    B4-2 Rq E4 C5 B4
-    A4-4 Rm E5 D#5
-    E5 D#5 E5 B4 D5 C5
-    
-    A4-2 Rq C4 E4 A4
-    B4-2 Rq E4 G#4 B4
-    C5-2 Rq E4 E5 D#5
-    E5 D#5 E5 B4 D5 C5
-    A4-2 Rq C4 E4 A4
-    
-    B4-2 Rq E4 C5 B4
-    A4-2 Rq B4 C5 D5
-    E5-2 Rq G4 F5 E5
-    D5-2 Rq F4 E5 D5
-    C5-2 Rq E4 D5 C5
-    
-    B4-2 E4 E4 E5 E4
-    E5 E5 E6 D#5 E5 D#5
-    E5 D#5 E5 B4 D5 C5
-    A4-2 Rq C4 E4 A4
-    B4-2 Rq E4 G#4 B4
-    
-    C5-2 Rq E4 E5 D#5
-    E5 D#5 E5 B4 D5 C5
-    A4-2 Rq C4 E4 A4
-    B4-2 Rq E4 C5 B4
-    A4-2 Rm
-    """
+    import input.fur_elise_beginner.score as fur_elise
+    waves = []
+    bpm = fur_elise.score.bpm
+    time_signature = fur_elise.score.time_signature
+    for i, channel in enumerate(fur_elise.score.channels):
+        waves.append(np.concatenate(np.array(
+            [note(n, 0.5, bpm, time_signature)
+             for n in channel.channel_score.replace("  ", " ").replace('\n', '').strip().split()]
+        )).ravel())
 
-    score_right_hand = """
-    Rm
-    Rs Rm
-    A2 E3 A3 Rq Rm
-    E2 E3 G#3 Rq Rm
-    A2 E3 A3 Rq Rm
-    
-    Rs Rm
-    A2 E3 A3 Rq Rm
-    E2 E3 G#3 Rq Rm
-    A2 E3 A3 Rq Rm
-    Rs Rm
-    
-    A2 E3 A3 Rq Rm
-    E2 E3 G#3 Rq Rm
-    A2 E3 A3 Rq Rm
-    Rs Rm
-    A2 E3 A3 Rq Rm
-    
-    E2 E3 G#3 Rq Rm
-    A2 E3 A3 Rq Rm
-    C3 G3 C4 Rq Rm
-    G2 G3 B3 Rq Rm
-    A2 E3 A3 Rq Rm
-    
-    E2 E3 Rm Rm
-    Rs Rm
-    Rs Rm
-    A2 E3 A3 Rq Rm
-    E2 E3 G#3 Rq Rm
-    
-    A2 E3 A3 Rq Rm
-    Rs Rm
-    A2 E3 A3 Rq Rm
-    E2 E3 G#3 Rq Rm
-    A2 E3 A3 Rq Rm
-  """
-    wave_left_hand = np.concatenate(np.array(
-        [note2(n, 0.5) for n in score_left_hand.replace("  ", " ").replace('\n', '').strip().split()]
-    )).ravel()
-    wave_right_hand = np.concatenate(np.array(
-        [note2(n, 0.5) for n in score_right_hand.replace("  ", " ").replace('\n', '').strip().split()]
-    )).ravel()
+    wave_len = max(map(len, waves))
 
-    wave_len = max(len(wave_left_hand), len(wave_right_hand))
-
-    wave_left_hand = np.pad(wave_left_hand, (0, wave_len - len(wave_left_hand)), 'constant', constant_values=(.0, .0))
-    wave_right_hand = np.pad(wave_right_hand, (0, wave_len - len(wave_right_hand)), 'constant', constant_values=(.0, .0))
+    for i, wave in enumerate(waves.copy()):
+        waves[i] = np.pad(wave, (0, wave_len - len(wave)), 'constant', constant_values=(.0, .0))
 
     os.makedirs(OUTPUT_PATH, exist_ok=True)
 
     # when muxed directly in numpy, the overlap sounds bad
-    wave = (wave_left_hand + wave_right_hand)
-    output_bin_file = pathlib.Path(OUTPUT_PATH, 'output.bin')
+    wave = sum(waves)
+    output_bin_file = pathlib.Path(OUTPUT_PATH, 'output_numpy.bin')
 
     with open(output_bin_file, 'wb') as output:
         output.write(wave.tobytes())
@@ -206,20 +129,20 @@ def main() -> None:
     )).wait()
 
     # when muxed in ffmpeg, the overlap sounds perfect
-    left_output_bin_file = pathlib.Path(OUTPUT_PATH, 'left_output.bin')
-    right_output_bin_file = pathlib.Path(OUTPUT_PATH, 'right_output.bin')
-    with open(left_output_bin_file, 'wb') as output:
-        output.write(wave_left_hand.tobytes())
-    with open(right_output_bin_file, 'wb') as output:
-        output.write(wave_right_hand.tobytes())
+    cmd_ffmpeg_i = []
+    for i, channel in enumerate(fur_elise.score.channels):
+        channel_output_bin_file = pathlib.Path(OUTPUT_PATH, f'{channel.name.replace(" ", "_").lower()}_output.bin')
+        cmd_ffmpeg_i.append(f'-f f32le -ar {SAMPLE_RATE} -i {channel_output_bin_file}')
+        with open(channel_output_bin_file, 'wb') as output:
+            output.write(waves[i].tobytes())
 
     output_mp3 = pathlib.Path(OUTPUT_PATH, 'output.mp3')
     output_mp3.unlink(missing_ok=True)
+
     subprocess.Popen(shlex.split(
         f'ffmpeg '
-        f'-f f32le -ar {SAMPLE_RATE} -i {left_output_bin_file} '
-        f'-f f32le -ar {SAMPLE_RATE} -i {right_output_bin_file} '
-        f'-filter_complex amix=inputs=2:duration=longest '
+        f'{" ".join(cmd_ffmpeg_i)} '
+        f'-filter_complex amix=inputs={len(cmd_ffmpeg_i)}:duration=longest '
         f'{output_mp3}'
     )).wait()
 
