@@ -12,3 +12,8 @@ This is just a bit of code to have fun and explore music using Python.
     * and https://stackoverflow.com/a/14528482 for `2 × mono → mono`
 * The music rests: https://en.wikipedia.org/wiki/Rest_(music)
  
+## The score
+
+I just used that one:
+
+![Fur Elise Beginner Score](fur%20elise.gif)
