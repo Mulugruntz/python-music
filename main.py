@@ -1,4 +1,5 @@
 import pathlib
+import os.path
 import re
 import subprocess
 import shlex
@@ -7,7 +8,7 @@ from typing import Tuple, Dict
 import numpy as np
 
 SAMPLE_RATE = 48_000
-OUTPUT_FILE = "output.bin"
+OUTPUT_PATH = pathlib.Path('output')
 STANDARD_PITCH = 440.0
 BPM = 120
 TIME_SIGNATURE = (3, 4)
@@ -189,32 +190,41 @@ def main() -> None:
     wave_left_hand = np.pad(wave_left_hand, (0, wave_len - len(wave_left_hand)), 'constant', constant_values=(.0, .0))
     wave_right_hand = np.pad(wave_right_hand, (0, wave_len - len(wave_right_hand)), 'constant', constant_values=(.0, .0))
 
-    pathlib.Path('output.mp3').unlink(missing_ok=True)
+    os.makedirs(OUTPUT_PATH, exist_ok=True)
 
     # when muxed directly in numpy, the overlap sounds bad
     wave = (wave_left_hand + wave_right_hand)
-    with open(OUTPUT_FILE, 'wb') as output:
+    output_bin_file = pathlib.Path(OUTPUT_PATH, 'output.bin')
+
+    with open(output_bin_file, 'wb') as output:
         output.write(wave.tobytes())
-    pathlib.Path('output_numpy.mp3').unlink(missing_ok=True)
+
+    output_numpy_mp3 = pathlib.Path(OUTPUT_PATH, 'output_numpy.mp3')
+    output_numpy_mp3.unlink(missing_ok=True)
     subprocess.Popen(shlex.split(
-        f'ffmpeg -f f32le -ar {SAMPLE_RATE} -i {OUTPUT_FILE} output_numpy.mp3'
+        f'ffmpeg -f f32le -ar {SAMPLE_RATE} -i {output_bin_file} {output_numpy_mp3}'
     )).wait()
 
     # when muxed in ffmpeg, the overlap sounds perfect
-    with open('left_' + OUTPUT_FILE, 'wb') as output:
+    left_output_bin_file = pathlib.Path(OUTPUT_PATH, 'left_output.bin')
+    right_output_bin_file = pathlib.Path(OUTPUT_PATH, 'right_output.bin')
+    with open(left_output_bin_file, 'wb') as output:
         output.write(wave_left_hand.tobytes())
-    with open('right_' + OUTPUT_FILE, 'wb') as output:
+    with open(right_output_bin_file, 'wb') as output:
         output.write(wave_right_hand.tobytes())
+
+    output_mp3 = pathlib.Path(OUTPUT_PATH, 'output.mp3')
+    output_mp3.unlink(missing_ok=True)
     subprocess.Popen(shlex.split(
         f'ffmpeg '
-        f'-f f32le -ar {SAMPLE_RATE} -i left_{OUTPUT_FILE} '
-        f'-f f32le -ar {SAMPLE_RATE} -i right_{OUTPUT_FILE} '
+        f'-f f32le -ar {SAMPLE_RATE} -i {left_output_bin_file} '
+        f'-f f32le -ar {SAMPLE_RATE} -i {right_output_bin_file} '
         f'-filter_complex amix=inputs=2:duration=longest '
-        f'output.mp3'
+        f'{output_mp3}'
     )).wait()
 
     # let's play!
-    subprocess.Popen(shlex.split(f"ffplay -autoexit -showmode 0 output.mp3")).wait()
+    subprocess.Popen(shlex.split(f"ffplay -autoexit -showmode 0 {output_mp3}")).wait()
 
 
 if __name__ == '__main__':
